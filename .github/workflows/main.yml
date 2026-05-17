@@ -1,9 +1,9 @@
-# .github/workflows/generate-config.yml (اصلاح‌شده)
+# .github/workflows/generate-config.yml
 name: Generate Config
 
 on:
   schedule:
-    - cron: '0 */12 * * *'   # هر ۱۲ ساعت
+    - cron: '0 */12 * * *'
   workflow_dispatch:
 
 permissions:
@@ -13,39 +13,66 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create Codespace and fetch links
+      - name: Verify gh auth for codespaces
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+        run: |
+          if ! gh auth status 2>&1 | grep -q 'codespace'; then
+            echo "::error::توکن CODESPACE_TOKEN فاقد دسترسی codespace است. لطفاً توکن را اصلاح کنید."
+            exit 1
+          fi
+
+      - name: Create and wait for codespace
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+        run: |
+          echo "Creating codespace..."
+          # ایجاد codespace و انتظار برای آماده شدن (‌timeout: 10 دقیقه)
+          timeout 600 gh codespace create \
+            --repo ${{ github.repository }} \
+            --branch main \
+            --machine basicLinux32gb \
+            --wait 2>&1 | tee create.log
+          echo "Codespace created."
+
+      - name: Get new codespace name
+        id: getname
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+        run: |
+          # دریافت آخرین codespace ساخته‌شده که Available است
+          CODESPACE_NAME=$(gh codespace list \
+            --json name,state,createdAt \
+            --jq 'max_by(.createdAt) | select(.state=="Available") | .name')
+          if [ -z "$CODESPACE_NAME" ]; then
+            echo "::error::هیچ codespace فعالی پیدا نشد."
+            exit 1
+          fi
+          echo "name=$CODESPACE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Wait for vless-links.txt and fetch it
         env:
           GH_TOKEN: "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"
+          CODESPACE_NAME: ${{ steps.getname.outputs.name }}
         run: |
-          # ایجاد Codespace و گرفتن نام آن از خروجی (آخرین خط)
-          codespace_name=$(gh codespace create --repo ${{ github.repository }} --branch main 2>&1 | tail -1)
-          echo "Created codespace: $codespace_name"
-
-          # منتظر فعال شدن Codespace (حداکثر ۵ دقیقه)
+          echo "Waiting for /tmp/vless-links.txt..."
           for i in $(seq 1 30); do
-            state=$(gh codespace list --json name,state -q ".[] | select(.name==\"$codespace_name\") | .state")
-            if [ "$state" = "Available" ]; then
+            if gh codespace ssh --codespace "$CODESPACE_NAME" -- test -f /tmp/vless-links.txt 2>/dev/null; then
               break
             fi
             sleep 10
           done
+          gh codespace ssh --codespace "$CODESPACE_NAME" -- cat /tmp/vless-links.txt > links.tmp
 
-          # انتظار تکمیلی تا فایل لینک‌ها ساخته شود
-          for i in $(seq 1 12); do
-            if gh codespace ssh --codespace "$codespace_name" -- test -f /tmp/vless-links.txt 2>/dev/null; then
-              break
-            fi
-            sleep 10
-          done
-
-          # دریافت فایل لینک‌ها
-          gh codespace ssh --codespace "$codespace_name" -- cat /tmp/vless-links.txt > links.tmp
-          
-          # توقف Codespace
-          gh codespace stop --codespace "$codespace_name"
+      - name: Stop codespace
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+          CODESPACE_NAME: ${{ steps.getname.outputs.name }}
+        run: |
+          gh codespace stop --codespace "$CODESPACE_NAME"
 
       - name: Update config.md
         run: |
