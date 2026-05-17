@@ -18,7 +18,7 @@ jobs:
 
       - name: Create Codespace and fetch links
         env:
-          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+          GH_TOKEN: "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"
         run: |
           # ایجاد Codespace و گرفتن نام آن از خروجی (آخرین خط)
           codespace_name=$(gh codespace create --repo ${{ github.repository }} --branch main 2>&1 | tail -1)
