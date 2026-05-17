@@ -1,0 +1,61 @@
+# .github/workflows/generate-config.yml
+name: Generate Config
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'   # every 12 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Create Codespace and fetch links
+        env:
+          GH_TOKEN: ${{ secrets.CODESPACE_TOKEN }}
+        run: |
+          # Create a new codespace
+          codespace_name=$(gh codespace create --repo ${{ github.repository }} --branch main --machine basicLinux32gb --json name -q '.name')
+          echo "Created codespace: $codespace_name"
+          
+          # Wait for codespace to be ready (max 5 min)
+          for i in $(seq 1 30); do
+            state=$(gh codespace list --json name,state -q ".[] | select(.name==\"$codespace_name\") | .state")
+            if [ "$state" = "Available" ]; then
+              break
+            fi
+            sleep 10
+          done
+          
+          # Give extra time for entrypoint to generate links
+          sleep 20
+          
+          # Fetch links file from codespace
+          gh codespace ssh --codespace "$codespace_name" -- cat /tmp/vless-links.txt > links.tmp
+          
+          # Stop codespace
+          gh codespace stop --codespace "$codespace_name"
+
+      - name: Update config.md
+        run: |
+          {
+            echo "# Latest VLESS Configs"
+            echo "Generated at $(date -u)"
+            echo '```'
+            cat links.tmp
+            echo '```'
+          } > config.md
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add config.md
+          git diff --staged --quiet || git commit -m "Update config.md [skip ci]"
+          git push
