@@ -1,18 +1,28 @@
+// .devcontainer/config.json
 {
   "log": {
     "loglevel": "warning",
     "access": "none"
+  },
+  "stats": {},
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true
+      }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true
+    }
   },
   "inbounds": [
     {
       "port": 443,
       "protocol": "vless",
       "settings": {
-        "clients": [
-          {
-            "id": "${UUID}"
-          }
-        ],
+        "clients": [],
         "decryption": "none"
       },
       "streamSettings": {
@@ -24,7 +34,17 @@
       "sniffing": {
         "enabled": true,
         "destOverride": ["http", "tls"]
-      }
+      },
+      "tag": "vless-ws"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": 10085,
+      "protocol": "dokodemo-door",
+      "settings": {
+        "address": "127.0.0.1"
+      },
+      "tag": "api"
     }
   ],
   "outbounds": [
@@ -41,9 +61,18 @@
     "rules": [
       {
         "type": "field",
+        "inboundTag": ["api"],
+        "outboundTag": "api"
+      },
+      {
+        "type": "field",
         "outboundTag": "block",
         "protocol": ["bittorrent"]
       }
     ]
+  },
+  "api": {
+    "tag": "api",
+    "services": ["StatsService"]
   }
 }
